@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <form action="#">
+        <fieldset>
+        <legend>Personal Information</legend>
+        <label for="fname" >First name : </label>
+        <input type="text" name="fname" placeholder="Enter your name">
+        <br><br>
+        <label for="Lname">Membership Id : </label>
+        <input type="text" name="Lname" placeholder="Enter your Membership Id">
+        <br><br>
+        <label for="email">Email : </label>
+        <input type="email" name="email" placeholder="Enter your Email">
+        <br><br>
+        <label for="phoneNumber" >Phone Number : </label>
+        <input type="tel" name="phoneNumber" placeholder="Enter your phoneNumber">
+        <br><br>
+        <label for="dob">Date of birth</label>
+        <input type="date" name="dob" placeholder="Enter your DAte of birth">
+        <br><br>
+        <label for="gender">gender: </label>
+        <input type="radio" name="gender" id="male" required>
+        <label for="male">Male</label>
+        <input type="radio" name="gender" id="female" required>
+        <label for="female">Female</label>
+        <br><br>
+
+        
+        <fieldset>
+            <legend>Membership Information</legend>
+            <br>
+            <label for="membership">Membership type</label>
+            <select name="membership" id="membership">
+                <option value="">Membership Type</option>
+                <option value="Faculty">Faculty</option>
+                <OPTION value="Researcher">Researcher</OPTION>
+                <OPTIon value="General">General Member</OPTIon>
+
+            </select>
+           
+            <br><br>
+            
+             <label for="LibrarySection">Preferred Library Section</label>
+            <select name="LibrarySection" id="LibrarySection">
+                <option value="">Science & Technology</option>
+                <option value="Literature">Literature</option>
+                <OPTION value="Business">Business Studies</OPTION>
+                <OPTIon value="Arts">Arts & Culture</OPTIon>
+
+            </select>
+            </fieldset>
+            <br><br>
+            <fieldset>
+                <legend>Reading Preferences</legend>
+                <br>
+            <label for="Readingpreference">Reading Preferences</label>
+            <select name="Readingpreference" id="Readingpreference">
+                <option value="">Select Favorite Book Categories:</option>
+                <option value="Literature">Fiction</option>
+                <OPTION value="Non-Fiction">Non-Fiction</OPTION>
+                <OPTIon value="Science">Science</OPTIon>
+                <OPTION value="Technology">Technology</OPTION>
+                <OPTIon value="Biography">Biography</OPTIon>
+                <OPTIon value="History">History</OPTIon>
+
+            </select>
+            </fieldset>
+            <br>
+            <fieldset>
+                <legend>Library Services</legend>
+                <br>
+
+            <label for="LibraryServices">Library Services</label>
+            <select name="LibraryServices" id="LibraryServices">
+                <option value="">Select Services You Want to Use::</option>
+                <option value="Literature">Book Borrowing</option>
+                <OPTION value="Non-Fiction">Digital Library Access</OPTION>
+                <OPTIon value="Science">Reading Room</OPTIon>
+                <OPTION value="Technology">Research Assistance</OPTION>
+                
+
+            </select>
+            </fieldset>
+            <br><br>
+            <fieldset>
+                <legend>Additiona Information</legend>
+                <br>
+
+            <label for="address">Address</label>
+            <input type="text" name="address" placeholder="Enter your Address">
+            <br><br>
+            <label for="emergencycontact">Emergency Contact</label>
+            <input type="tel" name="emergencycontact" placeholder="Enter your Emergency Contace">
+            <br><br>
+            <label for="reason">Reason for joining the library</label>
+            <textarea name="reason" id="reason" placeholder="What is the reason you are joining out library"></textarea>
+            <br><br>
+            <label for="Improvement">Suggestion for library Improvement</label>
+            <textarea name="Improvement" id="improve" placeholder="Give us some reason we can improve our library"></textarea>
+            </fieldset>
+
+            <br><br>
+
+
+             <button id="submit">Submit</button>
+        <button id="reSet">Reset</button>
+            
+
+
+
+
+     
+
+
+             
+
+
+
+            
+        </fieldset>
+
+       
+
+
+    </form>
+    
+</body>
+</html>
