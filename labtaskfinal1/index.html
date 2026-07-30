@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Campus Café Food Ordering System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <h1>Campus Café Food Ordering System</h1>
+
+    <form id="orderForm">
+
+        <h2>Customer Information</h2>
+
+        <label>Full Name</label>
+        <input type="text" id="name">
+        <small class="error" id="nameError"></small>
+
+        <label>Email</label>
+        <input type="email" id="email">
+        <small class="error" id="emailError"></small>
+
+        <label>Phone Number</label>
+        <input type="text" id="phone">
+        <small class="error" id="phoneError"></small>
+
+        <label>Student ID</label>
+        <input type="text" id="studentId">
+        <small class="error" id="studentError"></small>
+
+        <label>Gender</label>
+
+        <div class="radio-group">
+            <label>
+                <input type="radio" name="gender" value="Male"> Male
+            </label>
+
+            <label>
+                <input type="radio" name="gender" value="Female"> Female
+            </label>
+        </div>
+
+        <small class="error" id="genderError"></small>
+
+        <label>Department</label>
+
+        <select id="department">
+            <option value="">Select Department</option>
+            <option>CSE</option>
+            <option>EEE</option>
+            <option>BBA</option>
+            <option>English</option>
+            <option>Other</option>
+        </select>
+
+        <small class="error" id="departmentError"></small>
+
+        <h2>Food Selection</h2>
+
+        <div class="food-list">
+
+            <label>
+                <input type="checkbox" class="food" value="Burger" data-price="5">
+                Burger ($5)
+            </label>
+
+            <label>
+                <input type="checkbox" class="food" value="Pizza" data-price="8">
+                Pizza ($8)
+            </label>
+
+            <label>
+                <input type="checkbox" class="food" value="Sandwich" data-price="4">
+                Sandwich ($4)
+            </label>
+
+            <label>
+                <input type="checkbox" class="food" value="French Fries" data-price="3">
+                French Fries ($3)
+            </label>
+
+            <label>
+                <input type="checkbox" class="food" value="Coffee" data-price="2">
+                Coffee ($2)
+            </label>
+
+            <label>
+                <input type="checkbox" class="food" value="Cold Drink" data-price="2">
+                Cold Drink ($2)
+            </label>
+
+        </div>
+
+        <small class="error" id="foodError"></small>
+
+        <label>Quantity</label>
+        <input type="number" id="quantity" min="1">
+        <small class="error" id="quantityError"></small>
+
+        <label>Special Instructions</label>
+        <textarea id="instructions" rows="4"></textarea>
+
+        <button type="submit">Place Order</button>
+
+    </form>
+
+    <div id="result"></div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
