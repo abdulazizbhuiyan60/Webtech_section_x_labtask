@@ -157,7 +157,7 @@ unset($_SESSION['cart_message']);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StyleCart - Shopping Cart</title>
+    <title>Bookhaven - Shopping Cart</title>
     <link rel="stylesheet" href="cart.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
@@ -166,7 +166,7 @@ unset($_SESSION['cart_message']);
     <header>
         <div class="logo">
             <span class="logo-icon">◆</span>
-            StyleCart
+            Bookhaven
         </div>
 
         <nav>

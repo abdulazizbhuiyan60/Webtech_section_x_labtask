@@ -15,7 +15,7 @@ if (empty($_SESSION['csrf_token'])) {
      <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
-    <title>StyleCart Dashboard</title>
+    <title>Bookhaven Dashboard</title>
 
     <link rel="stylesheet" href="style.css">
 </head>
@@ -26,12 +26,12 @@ if (empty($_SESSION['csrf_token'])) {
     <header>
         <div class="logo">
             <span class="logo-icon">◆</span>
-            StyleCart
+            Bookhaven
         </div>
 
         <nav>
             <a href="index.php" class="active">Home</a>
-            <a href="contactus.php">Contact Us</a>
+            <a href="contact.php">Contact Us</a>
             
         </nav>
 
@@ -110,10 +110,9 @@ if (empty($_SESSION['csrf_token'])) {
             <p class="size-guide">Size guide <span>📏</span></p>
 
             <div class="fabric-info">
-                <p><strong>M</strong> : Length - 27 &nbsp; Width - 42</p>
-                <p><strong>L</strong> : Length - 28 &nbsp; Width - 44</p>
-                <p><strong>XL</strong> : Length - 29 &nbsp; Width - 46</p>
-                <p class="fabric-note">Cotton fabric 190+ GSM</p>
+                <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Consequuntur voluptas accusantium vero maiores quia, in ea. Neque quas quidem voluptate, sed ipsum alias distinctio autem cumque quo? Totam autem natus magni earum recusandae placeat tempora. Dolor quibusdam ut a quisquam quae inventore velit fuga ullam dicta eveniet consequatur, alias provident!</p>
+               
+                
             </div>
 
             <div class="size-selector">
@@ -121,8 +120,7 @@ if (empty($_SESSION['csrf_token'])) {
 
                 <div class="size-options">
                     <button type="button" class="size-btn active" onclick="selectSize(this,'M')">M</button>
-                    <button type="button" class="size-btn" onclick="selectSize(this,'L')">L</button>
-                    <button type="button" class="size-btn" onclick="selectSize(this,'XL')">XL</button>
+                    
                 </div>
             </div>
 

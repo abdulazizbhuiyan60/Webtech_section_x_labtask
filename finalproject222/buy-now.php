@@ -764,7 +764,7 @@ $editOrderLink =
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>StyleCart - Buy Now</title>
+    <title>Bookhaven - Buy Now</title>
 
     <link
         rel="stylesheet"
@@ -781,7 +781,7 @@ $editOrderLink =
     <header class="checkout-header">
         <a href="index.php" class="brand">
             <span class="brand-symbol">◆</span>
-            <span>StyleCart</span>
+            <span>Bookhaven</span>
         </a>
 
         <div class="secure-checkout">

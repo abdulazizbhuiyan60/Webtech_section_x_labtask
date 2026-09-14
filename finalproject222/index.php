@@ -1,3 +1,31 @@
+<?php
+$dbHost = 'localhost';
+$dbUser = 'root';
+$dbPass = '';
+$dbName = 'bookhaven';
+
+$databaseBooks = [];
+
+$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+
+if (!$conn->connect_error) {
+    $conn->set_charset('utf8mb4');
+    $result = $conn->query('SELECT id, name FROM books ORDER BY id DESC');
+
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $databaseBooks[] = $row;
+        }
+        $result->free();
+    }
+
+    $conn->close();
+}
+
+function e($value) {
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -272,6 +300,29 @@
                 </div>
 
             </div>
+
+            <!-- Books added by the manager from the database -->
+            <?php foreach ($databaseBooks as $book): ?>
+                <div class="card">
+                    <div class="product-image img1">
+                        <a href="product.php">
+                            <img src="img/img1.jpg" class="product-image" alt="<?php echo e($book['name']); ?>">
+                        </a>
+                        <span class="favorite">♡</span>
+                    </div>
+
+                    <div class="product-info">
+                        <h3><?php echo e($book['name']); ?></h3>
+
+                        <div class="price-row">
+                            <span>Available</span>
+                            <span class="old-price">Book ID: <?php echo e($book['id']); ?></span>
+                        </div>
+
+                        <button>Borrow</button>
+                    </div>
+                </div>
+            <?php endforeach; ?>
 
         </section>
 

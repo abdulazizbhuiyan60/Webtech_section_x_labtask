@@ -1,2137 +1,926 @@
 <?php
-
 session_start();
 
-require_once "managerdb.php";
-
-
-/* =========================================================
-   MESSAGE
-========================================================= */
-
-if (!isset($_SESSION['message'])) {
-    $_SESSION['message'] = "";
-}
-
-
-/* =========================================================
-   ADD BOOK
-========================================================= */
-
-if (isset($_POST['add_book'])) {
-
-    $title = trim($_POST['title'] ?? "");
-    $author = trim($_POST['author'] ?? "");
-    $category = trim($_POST['category'] ?? "");
-    $price = floatval($_POST['price'] ?? 0);
-
-    if (
-        $title != "" &&
-        $author != "" &&
-        $category != "" &&
-        $price > 0
-    ) {
-
-        $stmt = $conn->prepare(
-            "INSERT INTO books
-            (title, author, category, price, status)
-            VALUES (?, ?, ?, ?, 'Available')"
-        );
-
-        $stmt->bind_param(
-            "sssd",
-            $title,
-            $author,
-            $category,
-            $price
-        );
-
-        if ($stmt->execute()) {
-            $_SESSION['message'] = "Book added successfully.";
-        } else {
-            $_SESSION['message'] = "Failed to add book.";
-        }
-
-        $stmt->close();
-
-    } else {
-
-        $_SESSION['message'] = "Please enter valid book information.";
-    }
-
-    header("Location: manager.php");
+// Only logged-in manager accounts can access this page.
+if (empty($_SESSION['logged_in']) || ($_SESSION['role'] ?? '') !== 'manager') {
+    header('Location: login.php');
     exit;
 }
 
-
-/* =========================================================
-   UPDATE BOOK
-========================================================= */
-
-if (isset($_POST['update_book'])) {
-
-    $id = intval($_POST['book_id'] ?? 0);
-
-    $title = trim($_POST['title'] ?? "");
-    $author = trim($_POST['author'] ?? "");
-    $category = trim($_POST['category'] ?? "");
-    $price = floatval($_POST['price'] ?? 0);
-
-    if (
-        $id > 0 &&
-        $title != "" &&
-        $author != "" &&
-        $category != "" &&
-        $price > 0
-    ) {
-
-        $stmt = $conn->prepare(
-            "UPDATE books
-             SET title = ?,
-                 author = ?,
-                 category = ?,
-                 price = ?
-             WHERE id = ?"
-        );
-
-        $stmt->bind_param(
-            "sssdi",
-            $title,
-            $author,
-            $category,
-            $price,
-            $id
-        );
-
-        if ($stmt->execute()) {
-            $_SESSION['message'] = "Book updated successfully.";
-        } else {
-            $_SESSION['message'] = "Failed to update book.";
-        }
-
-        $stmt->close();
-
-    } else {
-
-        $_SESSION['message'] = "Invalid book information.";
-    }
-
-    header("Location: manager.php");
-    exit;
-}
-
-
-/* =========================================================
-   DELETE BOOK
-========================================================= */
-
-if (isset($_GET['delete'])) {
-
-    $id = intval($_GET['delete']);
-
-    if ($id > 0) {
-
-        $stmt = $conn->prepare(
-            "DELETE FROM books
-             WHERE id = ?"
-        );
-
-        $stmt->bind_param("i", $id);
-
-        if ($stmt->execute()) {
-            $_SESSION['message'] = "Book deleted successfully.";
-        } else {
-            $_SESSION['message'] = "Unable to delete book.";
-        }
-
-        $stmt->close();
-    }
-
-    header("Location: manager.php");
-    exit;
-}
-
-
-/* =========================================================
-   APPROVE BORROW REQUEST
-========================================================= */
-
-if (isset($_GET['approve'])) {
-
-    $requestID = intval($_GET['approve']);
-
-    if ($requestID > 0) {
-
-        $stmt = $conn->prepare(
-            "UPDATE borrow_requests
-             SET status = 'Approved'
-             WHERE id = ?
-             AND status = 'Pending'"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $requestID
-        );
-
-        $stmt->execute();
-
-        if ($stmt->affected_rows > 0) {
-
-            $_SESSION['message'] =
-                "Borrowing request approved.";
-
-        } else {
-
-            $_SESSION['message'] =
-                "Request could not be approved.";
-        }
-
-        $stmt->close();
-    }
-
-    header("Location: manager.php");
-    exit;
-}
-
-
-/* =========================================================
-   ISSUE BOOK
-========================================================= */
-
-if (isset($_GET['issue'])) {
-
-    $requestID = intval($_GET['issue']);
-
-    if ($requestID <= 0) {
-
-        $_SESSION['message'] =
-            "Invalid borrowing request.";
-
-        header("Location: manager.php");
-        exit;
-    }
-
-
-    $conn->begin_transaction();
-
-    try {
-
-        /* GET REQUEST */
-
-        $stmt = $conn->prepare(
-            "SELECT book_id
-             FROM borrow_requests
-             WHERE id = ?
-             AND status = 'Approved'
-             FOR UPDATE"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $requestID
-        );
-
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        if ($result->num_rows == 0) {
-            throw new Exception(
-                "Borrowing request is not approved."
-            );
-        }
-
-        $request = $result->fetch_assoc();
-
-        $bookID = intval($request['book_id']);
-
-        $stmt->close();
-
-
-        /* CHECK BOOK */
-
-        $stmt = $conn->prepare(
-            "SELECT status
-             FROM books
-             WHERE id = ?
-             FOR UPDATE"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $bookID
-        );
-
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        if ($result->num_rows == 0) {
-            throw new Exception(
-                "Book not found."
-            );
-        }
-
-        $book = $result->fetch_assoc();
-
-        $stmt->close();
-
-
-        if ($book['status'] != 'Available') {
-
-            throw new Exception(
-                "Book is currently unavailable."
-            );
-        }
-
-
-        /* SET BOOK BORROWED */
-
-        $stmt = $conn->prepare(
-            "UPDATE books
-             SET status = 'Borrowed'
-             WHERE id = ?"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $bookID
-        );
-
-        $stmt->execute();
-
-        $stmt->close();
-
-
-        /* SET REQUEST ISSUED */
-
-        $stmt = $conn->prepare(
-            "UPDATE borrow_requests
-             SET status = 'Issued'
-             WHERE id = ?"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $requestID
-        );
-
-        $stmt->execute();
-
-        $stmt->close();
-
-
-        $conn->commit();
-
-        $_SESSION['message'] =
-            "Book issued successfully.";
-
-    } catch (Exception $e) {
-
-        $conn->rollback();
-
-        $_SESSION['message'] =
-            $e->getMessage();
-    }
-
-    header("Location: manager.php");
-    exit;
-}
-
-
-/* =========================================================
-   RETURN BOOK
-========================================================= */
-
-if (isset($_GET['return'])) {
-
-    $bookID = intval($_GET['return']);
-
-    if ($bookID <= 0) {
-
-        $_SESSION['message'] =
-            "Invalid book.";
-
-        header("Location: manager.php");
-        exit;
-    }
-
-
-    $conn->begin_transaction();
-
-    try {
-
-        /* MAKE BOOK AVAILABLE */
-
-        $stmt = $conn->prepare(
-            "UPDATE books
-             SET status = 'Available'
-             WHERE id = ?"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $bookID
-        );
-
-        $stmt->execute();
-
-        $stmt->close();
-
-
-        /* CHANGE REQUEST TO RETURNED */
-
-        $stmt = $conn->prepare(
-            "UPDATE borrow_requests
-             SET status = 'Returned'
-             WHERE book_id = ?
-             AND status = 'Issued'"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $bookID
-        );
-
-        $stmt->execute();
-
-        $stmt->close();
-
-
-        $conn->commit();
-
-        $_SESSION['message'] =
-            "Returned book accepted successfully.";
-
-    } catch (Exception $e) {
-
-        $conn->rollback();
-
-        $_SESSION['message'] =
-            "Unable to return book.";
-    }
-
-    header("Location: manager.php");
-    exit;
-}
-
-
-/* =========================================================
-   EDIT BOOK
-========================================================= */
-
-$editBook = null;
-
-if (isset($_GET['edit'])) {
-
-    $editID = intval($_GET['edit']);
-
-    if ($editID > 0) {
-
-        $stmt = $conn->prepare(
-            "SELECT *
-             FROM books
-             WHERE id = ?"
-        );
-
-        $stmt->bind_param(
-            "i",
-            $editID
-        );
-
-        $stmt->execute();
-
-        $result = $stmt->get_result();
-
-        if ($result->num_rows > 0) {
-
-            $editBook =
-                $result->fetch_assoc();
-        }
-
-        $stmt->close();
-    }
-}
-
-
-/* =========================================================
-   GET ALL BOOKS
-========================================================= */
-
+$dbHost = 'localhost';
+$dbUser = 'root';
+$dbPass = '';
+$dbName = 'bookhaven';
+
+$users = [];
 $books = [];
+$dbError = '';
+$bookError = '';
+$customerError = '';
+$successMessage = isset($_SESSION['book_success']) ? (string) $_SESSION['book_success'] : '';
+$customerSuccessMessage = isset($_SESSION['customer_success']) ? (string) $_SESSION['customer_success'] : '';
+unset($_SESSION['book_success'], $_SESSION['customer_success']);
 
-$result = $conn->query(
-    "SELECT *
-     FROM books
-     ORDER BY id ASC"
-);
-
-if ($result) {
-
-    while ($row = $result->fetch_assoc()) {
-
-        $books[] = $row;
-    }
+if (empty($_SESSION['book_csrf_token'])) {
+    $_SESSION['book_csrf_token'] = bin2hex(random_bytes(32));
 }
 
-
-/* =========================================================
-   GET BORROW REQUESTS
-========================================================= */
-
-$requests = [];
-
-$result = $conn->query(
-    "SELECT
-        borrow_requests.id,
-        borrow_requests.student,
-        borrow_requests.book_id,
-        borrow_requests.status,
-        books.title AS book_title,
-        books.price AS book_price,
-        books.status AS book_status
-
-     FROM borrow_requests
-
-     INNER JOIN books
-     ON borrow_requests.book_id = books.id
-
-     ORDER BY borrow_requests.id DESC"
-);
-
-if ($result) {
-
-    while ($row = $result->fetch_assoc()) {
-
-        $requests[] = $row;
-    }
+if (empty($_SESSION['customer_csrf_token'])) {
+    $_SESSION['customer_csrf_token'] = bin2hex(random_bytes(32));
 }
 
-
-/* =========================================================
-   STATISTICS
-========================================================= */
-
-$totalBooks = 0;
-$availableBooks = 0;
-$borrowedBooks = 0;
-$pendingRequests = 0;
-
-
-$result = $conn->query(
-    "SELECT COUNT(*) AS total
-     FROM books"
-);
-
-if ($result) {
-
-    $row = $result->fetch_assoc();
-
-    $totalBooks =
-        intval($row['total']);
+function e($value) {
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-
-$result = $conn->query(
-    "SELECT COUNT(*) AS total
-     FROM books
-     WHERE status = 'Available'"
-);
-
-if ($result) {
-
-    $row = $result->fetch_assoc();
-
-    $availableBooks =
-        intval($row['total']);
-}
-
-
-$result = $conn->query(
-    "SELECT COUNT(*) AS total
-     FROM books
-     WHERE status = 'Borrowed'"
-);
-
-if ($result) {
-
-    $row = $result->fetch_assoc();
-
-    $borrowedBooks =
-        intval($row['total']);
-}
-
-
-$result = $conn->query(
-    "SELECT COUNT(*) AS total
-     FROM borrow_requests
-     WHERE status = 'Pending'"
-);
-
-if ($result) {
-
-    $row = $result->fetch_assoc();
-
-    $pendingRequests =
-        intval($row['total']);
-}
-
-?>
-
-<!DOCTYPE html>
-
-<html lang="en">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
-
-<title>
-    Library Manager Dashboard
-</title>
-
-
-<style>
-
-/* ==================================
-   GENERAL
-================================== */
-
-* {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-    font-family: Arial, Helvetica, sans-serif;
-}
-
-
-body {
-
-    background: #f4ede4;
-    color: #3b2418;
-}
-
-
-/* ==================================
-   HEADER
-================================== */
-
-header {
-
-    background: #5d3a24;
-    color: white;
-
-    padding: 22px 35px;
-
-    display: flex;
-
-    justify-content: space-between;
-
-    align-items: center;
-
-    box-shadow:
-        0 3px 8px rgba(0,0,0,0.25);
-}
-
-
-header h1 {
-
-    font-size: 26px;
-}
-
-
-.manager-name {
-
-    background: #8b5e3c;
-
-    padding: 10px 18px;
-
-    border-radius: 25px;
-}
-
-
-/* ==================================
-   LAYOUT
-================================== */
-
-.container {
-
-    width: 94%;
-
-    max-width: 1400px;
-
-    margin: 30px auto;
-}
-
-
-.dashboard-title {
-
-    margin-bottom: 20px;
-}
-
-
-.dashboard-title h2 {
-
-    color: #5d3a24;
-
-    margin-bottom: 6px;
-}
-
-
-/* ==================================
-   STATISTICS
-================================== */
-
-.stats {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap: 18px;
-
-    margin-bottom: 30px;
-}
-
-
-.stat-card {
-
-    background: white;
-
-    padding: 22px;
-
-    border-left:
-        6px solid #7b4b2a;
-
-    border-radius: 10px;
-
-    box-shadow:
-        0 3px 10px rgba(0,0,0,.12);
-}
-
-
-.stat-card h3 {
-
-    font-size: 15px;
-
-    color: #80614e;
-}
-
-
-.stat-card p {
-
-    font-size: 27px;
-
-    margin-top: 10px;
-
-    font-weight: bold;
-
-    color: #4c2b1a;
-}
-
-
-/* ==================================
-   SECTIONS
-================================== */
-
-.section {
-
-    background: white;
-
-    padding: 25px;
-
-    margin-bottom: 30px;
-
-    border-radius: 12px;
-
-    box-shadow:
-        0 3px 12px rgba(0,0,0,.12);
-}
-
-
-.section h2 {
-
-    margin-bottom: 20px;
-
-    color: #5d3a24;
-
-    border-bottom:
-        2px solid #d8c1ae;
-
-    padding-bottom: 10px;
-}
-
-
-/* ==================================
-   FORM
-================================== */
-
-.book-form {
-
-    display: grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap: 15px;
-}
-
-
-.form-group {
-
-    display: flex;
-
-    flex-direction: column;
-}
-
-
-.form-group label {
-
-    margin-bottom: 6px;
-
-    font-weight: bold;
-}
-
-
-.form-group input {
-
-    padding: 11px;
-
-    border:
-        1px solid #b99b84;
-
-    border-radius: 6px;
-
-    outline: none;
-}
-
-
-.form-group input:focus {
-
-    border-color: #5d3a24;
-}
-
-
-.form-button {
-
-    grid-column: 1 / -1;
-}
-
-
-button {
-
-    padding: 11px 20px;
-
-    border: none;
-
-    border-radius: 6px;
-
-    background: #6b4226;
-
-    color: white;
-
-    cursor: pointer;
-
-    font-size: 15px;
-}
-
-
-button:hover {
-
-    background: #4c2b1a;
-}
-
-
-.cancel-button {
-
-    display: inline-block;
-
-    text-decoration: none;
-
-    background: #777;
-
-    color: white;
-
-    padding: 11px 18px;
-
-    border-radius: 6px;
-
-    margin-left: 5px;
-}
-
-
-/* ==================================
-   TABLE
-================================== */
-
-.table-wrapper {
-
-    overflow-x: auto;
-}
-
-
-table {
-
-    width: 100%;
-
-    border-collapse: collapse;
-}
-
-
-th {
-
-    background: #6b4226;
-
-    color: white;
-
-    padding: 13px;
-}
-
-
-td {
-
-    padding: 12px;
-
-    border-bottom:
-        1px solid #e1d3c7;
-
-    text-align: center;
-}
-
-
-tr:hover {
-
-    background: #faf5f1;
-}
-
-
-/* ==================================
-   STATUS
-================================== */
-
-.status {
-
-    display: inline-block;
-
-    padding: 6px 12px;
-
-    border-radius: 20px;
-
-    font-size: 13px;
-
-    font-weight: bold;
-}
-
-
-.available {
-
-    background: #d9f0df;
-
-    color: #246636;
-}
-
-
-.borrowed {
-
-    background: #f3d5d5;
-
-    color: #8b2b2b;
-}
-
-
-.pending {
-
-    background: #fff0c5;
-
-    color: #7d6200;
-}
-
-
-.approved {
-
-    background: #d9e8fa;
-
-    color: #225a9b;
-}
-
-
-.issued {
-
-    background: #eadcff;
-
-    color: #65409b;
-}
-
-
-.returned {
-
-    background: #d9f0df;
-
-    color: #246636;
-}
-
-
-/* ==================================
-   ACTION BUTTONS
-================================== */
-
-.action {
-
-    display: inline-block;
-
-    text-decoration: none;
-
-    padding: 7px 12px;
-
-    border-radius: 5px;
-
-    color: white;
-
-    margin: 2px;
-
-    font-size: 13px;
-}
-
-
-.edit {
-
-    background: #a16b3f;
-}
-
-
-.delete {
-
-    background: #a33a3a;
-}
-
-
-.approve {
-
-    background: #346b4a;
-}
-
-
-.issue {
-
-    background: #515d88;
-}
-
-
-.return {
-
-    background: #8a623d;
-}
-
-
-/* ==================================
-   MESSAGE
-================================== */
-
-.message {
-
-    background: #e3f3e6;
-
-    color: #2d6839;
-
-    padding: 14px;
-
-    border-left:
-        5px solid #3c8b4f;
-
-    margin-bottom: 22px;
-
-    border-radius: 5px;
-}
-
-
-/* ==================================
-   EMPTY MESSAGE
-================================== */
-
-.empty {
-
-    padding: 20px;
-
-    text-align: center;
-
-    color: #777;
-}
-
-
-/* ==================================
-   RESPONSIVE
-================================== */
-
-@media(max-width: 900px) {
-
-    .stats {
-
-        grid-template-columns:
-            repeat(2, 1fr);
+$conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
+
+if ($conn->connect_error) {
+    $dbError = 'Database connection failed: ' . $conn->connect_error;
+} else {
+    $conn->set_charset('utf8mb4');
+
+    // Make sure the simple books table exists.
+    $createBooksTable = "CREATE TABLE IF NOT EXISTS books (
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        name VARCHAR(150) NOT NULL,
+        PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci";
+
+    if (!$conn->query($createBooksTable)) {
+        $bookError = 'Could not prepare the books table: ' . $conn->error;
     }
 
-
-    .book-form {
-
-        grid-template-columns:
-            1fr 1fr;
-    }
-}
-
-
-@media(max-width: 600px) {
-
-    header {
-
-        flex-direction: column;
-
-        gap: 12px;
-    }
-
-
-    .stats {
-
-        grid-template-columns: 1fr;
-    }
-
-
-    .book-form {
-
-        grid-template-columns: 1fr;
-    }
-}
-
-</style>
-
-</head>
-
-
-<body>
-
-
-<header>
-
-    <h1>
-        📚 Library Management System
-    </h1>
-
-
-    <div class="manager-name">
-
-        👨‍💼 Manager Panel
-
-    </div>
-
-</header>
-
-
-
-<div class="container">
-
-
-    <div class="dashboard-title">
-
-        <h2>
-            Manager Dashboard
-        </h2>
-
-        <p>
-            Manage books, borrowing requests,
-            issuing and returned books.
-        </p>
-
-    </div>
-
-
-
-    <?php if ($_SESSION['message'] != ""): ?>
-
-        <div class="message">
-
-            <?php
-
-            echo htmlspecialchars(
-                $_SESSION['message']
-            );
-
-            $_SESSION['message'] = "";
-
-            ?>
-
-        </div>
-
-    <?php endif; ?>
-
-
-
-    <!-- =================================
-         STATISTICS
-    ================================== -->
-
-    <div class="stats">
-
-
-        <div class="stat-card">
-
-            <h3>
-                Total Books
-            </h3>
-
-            <p>
-                <?php echo $totalBooks; ?>
-            </p>
-
-        </div>
-
-
-        <div class="stat-card">
-
-            <h3>
-                Available Books
-            </h3>
-
-            <p>
-                <?php echo $availableBooks; ?>
-            </p>
-
-        </div>
-
-
-        <div class="stat-card">
-
-            <h3>
-                Borrowed Books
-            </h3>
-
-            <p>
-                <?php echo $borrowedBooks; ?>
-            </p>
-
-        </div>
-
-
-        <div class="stat-card">
-
-            <h3>
-                Pending Requests
-            </h3>
-
-            <p>
-                <?php echo $pendingRequests; ?>
-            </p>
-
-        </div>
-
-
-    </div>
-
-
-
-    <!-- =================================
-         ADD / EDIT BOOK
-    ================================== -->
-
-    <div class="section">
-
-
-        <h2>
-
-            <?php
-
-            if ($editBook) {
-
-                echo "✏️ Edit Book";
-
+    // Add a new book to the books table.
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'add_book') {
+        $submittedToken = (string) ($_POST['csrf_token'] ?? '');
+        $bookName = trim((string) ($_POST['book_name'] ?? ''));
+
+        if (!hash_equals((string) $_SESSION['book_csrf_token'], $submittedToken)) {
+            $bookError = 'Invalid form request. Please refresh the page and try again.';
+        } elseif ($bookName === '') {
+            $bookError = 'Please enter a book name.';
+        } elseif (strlen($bookName) > 150) {
+            $bookError = 'Book name must be 150 characters or less.';
+        } else {
+            $stmt = $conn->prepare('INSERT INTO books (name) VALUES (?)');
+
+            if ($stmt) {
+                $stmt->bind_param('s', $bookName);
+
+                if ($stmt->execute()) {
+                    $_SESSION['book_success'] = 'Book added successfully.';
+                    $_SESSION['book_csrf_token'] = bin2hex(random_bytes(32));
+                    $stmt->close();
+                    header('Location: manager.php');
+                    exit;
+                }
+
+                $bookError = 'Could not add the book: ' . $stmt->error;
+                $stmt->close();
             } else {
+                $bookError = 'Could not prepare the add-book request: ' . $conn->error;
+            }
+        }
+    }
 
-                echo "➕ Add New Book";
+    // Delete a book from the books table.
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_book') {
+        $submittedToken = (string) ($_POST['csrf_token'] ?? '');
+        $bookId = filter_var($_POST['book_id'] ?? null, FILTER_VALIDATE_INT);
+
+        if (!hash_equals((string) $_SESSION['book_csrf_token'], $submittedToken)) {
+            $bookError = 'Invalid form request. Please refresh the page and try again.';
+        } elseif ($bookId === false || $bookId === null || $bookId < 1) {
+            $bookError = 'Invalid book ID.';
+        } else {
+            $stmt = $conn->prepare('DELETE FROM books WHERE id = ?');
+
+            if ($stmt) {
+                $stmt->bind_param('i', $bookId);
+
+                if ($stmt->execute()) {
+                    if ($stmt->affected_rows > 0) {
+                        $_SESSION['book_success'] = 'Book deleted successfully.';
+                    } else {
+                        $_SESSION['book_success'] = 'The book was already removed.';
+                    }
+
+                    $_SESSION['book_csrf_token'] = bin2hex(random_bytes(32));
+                    $stmt->close();
+                    header('Location: manager.php');
+                    exit;
+                }
+
+                $bookError = 'Could not delete the book: ' . $stmt->error;
+                $stmt->close();
+            } else {
+                $bookError = 'Could not prepare the delete-book request: ' . $conn->error;
+            }
+        }
+    }
+
+    // Delete a customer from the users table.
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_customer') {
+        $submittedToken = (string) ($_POST['csrf_token'] ?? '');
+        $customerId = filter_var($_POST['customer_id'] ?? null, FILTER_VALIDATE_INT);
+
+        if (!hash_equals((string) $_SESSION['customer_csrf_token'], $submittedToken)) {
+            $customerError = 'Invalid form request. Please refresh the page and try again.';
+        } elseif ($customerId === false || $customerId === null || $customerId < 1) {
+            $customerError = 'Invalid customer ID.';
+        } else {
+            $stmt = $conn->prepare('DELETE FROM users WHERE id = ?');
+
+            if ($stmt) {
+                $stmt->bind_param('i', $customerId);
+
+                if ($stmt->execute()) {
+                    if ($stmt->affected_rows > 0) {
+                        $_SESSION['customer_success'] = 'Customer removed successfully.';
+                    } else {
+                        $_SESSION['customer_success'] = 'The customer was already removed.';
+                    }
+
+                    $_SESSION['customer_csrf_token'] = bin2hex(random_bytes(32));
+                    $stmt->close();
+                    header('Location: manager.php');
+                    exit;
+                }
+
+                $customerError = 'Could not remove the customer: ' . $stmt->error;
+                $stmt->close();
+            } else {
+                $customerError = 'Could not prepare the delete-customer request: ' . $conn->error;
+            }
+        }
+    }
+
+    // Load registered customers.
+    $result = $conn->query('SELECT id, full_name, email, created_at FROM users ORDER BY id DESC');
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $users[] = $row;
+        }
+        $result->free();
+    } else {
+        $dbError = 'Could not load users: ' . $conn->error;
+    }
+
+    // Load books from the books table.
+    $bookResult = $conn->query('SELECT id, name FROM books ORDER BY id DESC');
+    if ($bookResult) {
+        while ($row = $bookResult->fetch_assoc()) {
+            $books[] = $row;
+        }
+        $bookResult->free();
+    } elseif ($bookError === '') {
+        $bookError = 'Could not load books: ' . $conn->error;
+    }
+
+    $conn->close();
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookhaven Manager Dashboard</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #f6f1e6;
+            color: #2b2420;
+            min-height: 100vh;
+        }
+
+        a {
+            text-decoration: none;
+            color: inherit;
+        }
+
+        /* ================= HEADER ================= */
+        .site-header {
+            min-height: 72px;
+            padding: 0 6%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+            background: #fffdf8;
+            border-bottom: 1px solid #e3d9c4;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            box-shadow: 0 2px 10px rgba(92, 26, 30, 0.06);
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            color: #5c1a1e;
+            font-size: 24px;
+            font-weight: 700;
+        }
+
+        .logo-icon {
+            color: #b0873f;
+            font-size: 18px;
+        }
+
+        .site-nav {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+        }
+
+        .site-nav a {
+            color: #5c5248;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 26px 0 23px;
+            border-bottom: 3px solid transparent;
+            transition: 0.2s;
+        }
+
+        .site-nav a:hover,
+        .site-nav a.active {
+            color: #5c1a1e;
+            border-bottom-color: #b0873f;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .manager-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 13px;
+            border: 1px solid #e3d9c4;
+            border-radius: 999px;
+            color: #5c1a1e;
+            background: #fdf8ee;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .manager-chip .material-icons {
+            font-size: 18px;
+            color: #b0873f;
+        }
+
+        /* ================= HERO ================= */
+        .dashboard-hero {
+            background: #5c1a1e;
+            color: #fffdf8;
+            padding: 58px 6%;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .dashboard-hero::after {
+            content: "◆";
+            position: absolute;
+            right: 7%;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 150px;
+            color: rgba(176, 135, 63, 0.12);
+        }
+
+        .hero-content {
+            width: min(1180px, 100%);
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .hero-eyebrow {
+            color: #d9bc82;
+            font-size: 12px;
+            letter-spacing: 2px;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .dashboard-hero h1 {
+            font-size: clamp(30px, 5vw, 46px);
+            margin-bottom: 12px;
+        }
+
+        .dashboard-hero p {
+            max-width: 650px;
+            color: #eadfd2;
+            line-height: 1.7;
+            font-size: 15px;
+        }
+
+        /* ================= MAIN ================= */
+        .page {
+            width: min(1180px, 92%);
+            margin: 34px auto 55px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 18px;
+            margin-bottom: 26px;
+        }
+
+        .stat-card {
+            background: #fffdf8;
+            border: 1px solid #e3d9c4;
+            border-radius: 10px;
+            padding: 22px;
+            box-shadow: 0 5px 18px rgba(92, 26, 30, 0.06);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .stat-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #b0873f;
+        }
+
+        .stat-title {
+            color: #5c5248;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .stat-number {
+            color: #5c1a1e;
+            font-size: 32px;
+            font-weight: 800;
+        }
+
+        .panel {
+            background: #fffdf8;
+            border: 1px solid #e3d9c4;
+            border-radius: 10px;
+            box-shadow: 0 5px 18px rgba(92, 26, 30, 0.05);
+            margin-bottom: 28px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            min-height: 66px;
+            padding: 18px 22px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            background: #fbf6ec;
+            border-bottom: 1px solid #eadfca;
+        }
+
+        .panel-header h2 {
+            color: #5c1a1e;
+            font-size: 20px;
+        }
+
+        .badge {
+            background: #efe2c9;
+            color: #7a5726;
+            border: 1px solid #ddc494;
+            padding: 6px 11px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        /* ================= FORM ================= */
+        .add-book-form {
+            padding: 24px 22px;
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            flex-wrap: wrap;
+        }
+
+        .form-field {
+            flex: 1 1 320px;
+        }
+
+        .form-field label {
+            display: block;
+            margin-bottom: 7px;
+            color: #2b2420;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .form-field input {
+            width: 100%;
+            height: 46px;
+            padding: 0 13px;
+            border: 1px solid #e3d9c4;
+            border-radius: 5px;
+            outline: none;
+            background: #fff;
+            color: #2b2420;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+
+        .form-field input:focus {
+            border-color: #b0873f;
+            box-shadow: 0 0 0 3px rgba(176, 135, 63, 0.13);
+        }
+
+        .add-btn {
+            height: 46px;
+            padding: 0 22px;
+            border: 0;
+            border-radius: 5px;
+            background: #b0873f;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .add-btn:hover {
+            background: #8f6a2c;
+        }
+
+        /* ================= MESSAGES ================= */
+        .error-box,
+        .success-box {
+            margin: 20px 22px 0;
+            padding: 12px 14px;
+            border-radius: 5px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .error-box {
+            color: #842029;
+            background: #f8d7da;
+            border: 1px solid #f5c2c7;
+        }
+
+        .success-box {
+            color: #5c1a1e;
+            background: #f3e8d3;
+            border: 1px solid #dec79d;
+        }
+
+        .empty {
+            padding: 30px;
+            text-align: center;
+            color: #6b6058;
+        }
+
+        /* ================= TABLE ================= */
+        .table-wrap {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 720px;
+        }
+
+        th,
+        td {
+            padding: 15px 18px;
+            border-bottom: 1px solid #eee3d2;
+            text-align: left;
+            font-size: 14px;
+            vertical-align: middle;
+        }
+
+        th {
+            background: #fffaf1;
+            color: #5c1a1e;
+            font-size: 12px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+
+        td {
+            color: #4d443e;
+        }
+
+        tbody tr:hover {
+            background: #fcf8f0;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .id-pill {
+            display: inline-block;
+            min-width: 34px;
+            padding: 5px 8px;
+            text-align: center;
+            background: #f1e5d1;
+            color: #7b592b;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .delete-form {
+            display: inline;
+        }
+
+        .delete-btn {
+            border: 1px solid #c98c8f;
+            border-radius: 5px;
+            padding: 8px 12px;
+            background: #fff7f6;
+            color: #8f3035;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .delete-btn:hover {
+            color: #fff;
+            background: #8f3035;
+            border-color: #8f3035;
+        }
+
+        /* ================= FOOTER ================= */
+        footer {
+            margin-top: 58px;
+            background: #5c1a1e;
+            color: #fffdf8;
+        }
+
+        .footer-top {
+            width: min(1180px, 92%);
+            margin: 0 auto;
+            padding: 46px 0 38px;
+            display: grid;
+            grid-template-columns: 1.5fr 1fr 1fr 1fr;
+            gap: 40px;
+        }
+
+        .footer-brand .logo {
+            color: #fffdf8;
+            margin-bottom: 13px;
+        }
+
+        .footer-brand p {
+            color: #d9cbbf;
+            font-size: 13px;
+            line-height: 1.7;
+            max-width: 250px;
+        }
+
+        .footer-links h4,
+        .footer-social h4 {
+            color: #d9bc82;
+            font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        .footer-links {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .footer-links a {
+            color: #e8ddd3;
+            font-size: 13px;
+            margin-bottom: 10px;
+            transition: 0.2s;
+        }
+
+        .footer-links a:hover {
+            color: #d9bc82;
+        }
+
+        .social-icons {
+            display: flex;
+            gap: 14px;
+        }
+
+        .social-icons a {
+            width: 38px;
+            height: 38px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(217, 188, 130, 0.5);
+            border-radius: 50%;
+            color: #d9bc82;
+            transition: 0.2s;
+        }
+
+        .social-icons a:hover {
+            color: #5c1a1e;
+            background: #d9bc82;
+        }
+
+        .footer-bottom {
+            border-top: 1px solid rgba(255,255,255,0.12);
+            text-align: center;
+            padding: 18px 20px;
+            color: #cdbfb4;
+            font-size: 12px;
+        }
+
+        /* ================= RESPONSIVE ================= */
+        @media (max-width: 900px) {
+            .site-nav {
+                gap: 17px;
             }
 
-            ?>
+            .footer-top {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
 
-        </h2>
+        @media (max-width: 720px) {
+            .site-header {
+                padding: 0 4%;
+            }
 
+            .site-nav {
+                display: none;
+            }
 
+            .manager-chip span:last-child {
+                display: none;
+            }
 
-        <form
-            method="POST"
-            class="book-form"
-            onsubmit="return validateBookForm();"
-        >
+            .dashboard-hero {
+                padding: 44px 5%;
+            }
 
+            .dashboard-hero::after {
+                font-size: 105px;
+                right: 2%;
+            }
 
-            <?php if ($editBook): ?>
+            .stats {
+                grid-template-columns: 1fr;
+            }
 
-                <input
-                    type="hidden"
-                    name="book_id"
-                    value="<?php echo intval($editBook['id']); ?>"
-                >
+            .add-btn {
+                width: 100%;
+            }
 
+            .footer-top {
+                grid-template-columns: 1fr;
+                gap: 26px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="site-header">
+        <a class="logo" href="index.php">
+            <span class="logo-icon">◆</span>
+            Bookhaven
+        </a>
+
+        <nav class="site-nav">
+            <a href="index.php">Home</a>
+            <a href="manager.php" class="active">Manager</a>
+            <a href="contact.php">Contact Us</a>
+        </nav>
+
+        <div class="header-actions">
+            <div class="manager-chip">
+                <span class="material-icons">admin_panel_settings</span>
+                <span>Manager</span>
+            </div>
+        </div>
+    </header>
+
+    <section class="dashboard-hero">
+        <div class="hero-content">
+            <div class="hero-eyebrow">Bookhaven Management</div>
+            <h1>Manager Dashboard</h1>
+            <p>Manage customers and books from one place while keeping the Bookhaven catalog up to date.</p>
+        </div>
+    </section>
+
+    <main class="page">
+        <section class="stats">
+            <div class="stat-card">
+                <div class="stat-title">Registered Customers</div>
+                <div class="stat-number"><?php echo count($users); ?></div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-title">Books Added</div>
+                <div class="stat-number"><?php echo count($books); ?></div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Add New Book</h2>
+                <span class="badge">Books Database</span>
+            </div>
+
+            <?php if ($successMessage !== ''): ?>
+                <div class="success-box"><?php echo e($successMessage); ?></div>
             <?php endif; ?>
 
+            <?php if ($bookError !== ''): ?>
+                <div class="error-box"><?php echo e($bookError); ?></div>
+            <?php endif; ?>
 
+            <form class="add-book-form" method="post" action="manager.php">
+                <input type="hidden" name="action" value="add_book">
+                <input type="hidden" name="csrf_token" value="<?php echo e($_SESSION['book_csrf_token']); ?>">
 
-            <div class="form-group">
-
-                <label>
-                    Book Title
-                </label>
-
-                <input
-                    type="text"
-                    id="title"
-                    name="title"
-
-                    value="<?php
-                    echo $editBook
-                        ? htmlspecialchars($editBook['title'])
-                        : '';
-                    ?>"
-
-                    placeholder="Enter book title"
-                >
-
-            </div>
-
-
-
-            <div class="form-group">
-
-                <label>
-                    Author
-                </label>
-
-                <input
-                    type="text"
-                    id="author"
-                    name="author"
-
-                    value="<?php
-                    echo $editBook
-                        ? htmlspecialchars($editBook['author'])
-                        : '';
-                    ?>"
-
-                    placeholder="Enter author"
-                >
-
-            </div>
-
-
-
-            <div class="form-group">
-
-                <label>
-                    Category
-                </label>
-
-                <input
-                    type="text"
-                    id="category"
-                    name="category"
-
-                    value="<?php
-                    echo $editBook
-                        ? htmlspecialchars($editBook['category'])
-                        : '';
-                    ?>"
-
-                    placeholder="Enter category"
-                >
-
-            </div>
-
-
-
-            <div class="form-group">
-
-                <label>
-                    Price (৳)
-                </label>
-
-                <input
-                    type="number"
-                    id="price"
-                    name="price"
-
-                    min="1"
-
-                    step="0.01"
-
-                    value="<?php
-                    echo $editBook
-                        ? htmlspecialchars($editBook['price'])
-                        : '';
-                    ?>"
-
-                    placeholder="Enter price"
-                >
-
-            </div>
-
-
-
-            <div class="form-button">
-
-
-                <?php if ($editBook): ?>
-
-
-                    <button
-                        type="submit"
-                        name="update_book"
+                <div class="form-field">
+                    <label for="bookName">Book Name</label>
+                    <input
+                        type="text"
+                        id="bookName"
+                        name="book_name"
+                        maxlength="150"
+                        placeholder="Enter book name"
+                        required
                     >
+                </div>
 
-                        Update Book
+                <button type="submit" class="add-btn">Add Book</button>
+            </form>
+        </section>
 
-                    </button>
-
-
-                    <a
-                        href="manager.php"
-                        class="cancel-button"
-                    >
-                        Cancel
-                    </a>
-
-
-                <?php else: ?>
-
-
-                    <button
-                        type="submit"
-                        name="add_book"
-                    >
-
-                        Add Book
-
-                    </button>
-
-
-                <?php endif; ?>
-
-
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Customer List</h2>
+                <span class="badge"><?php echo count($users); ?> customers</span>
             </div>
 
-
-        </form>
-
-
-    </div>
-
-
-
-    <!-- =================================
-         BOOK LIST
-    ================================== -->
-
-    <div class="section">
-
-
-        <h2>
-            📖 Manage Books
-        </h2>
-
-
-        <div class="table-wrapper">
-
-
-            <table>
-
-
-                <thead>
-
-                    <tr>
-
-                        <th>ID</th>
-
-                        <th>Book Name</th>
-
-                        <th>Author</th>
-
-                        <th>Category</th>
-
-                        <th>Price</th>
-
-                        <th>Status</th>
-
-                        <th>Actions</th>
-
-                    </tr>
-
-                </thead>
-
-
-
-                <tbody>
-
-
-                <?php if (count($books) > 0): ?>
-
-
-                    <?php foreach ($books as $book): ?>
-
-
-                        <tr>
-
-
-                            <td>
-
-                                <?php
-                                echo intval(
-                                    $book['id']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $book['title']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $book['author']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $book['category']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                ৳<?php
-                                echo number_format(
-                                    $book['price'],
-                                    2
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <span
-                                    class="
-                                        status
-                                        <?php
-                                        echo strtolower(
-                                            $book['status']
-                                        );
-                                        ?>
-                                    "
-                                >
-
-                                    <?php
-                                    echo htmlspecialchars(
-                                        $book['status']
-                                    );
-                                    ?>
-
-                                </span>
-
-                            </td>
-
-
-                            <td>
-
-
-                                <a
-                                    class="action edit"
-
-                                    href="manager.php?edit=<?php
-                                    echo intval(
-                                        $book['id']
-                                    );
-                                    ?>"
-                                >
-                                    Edit
-                                </a>
-
-
-
-                                <a
-                                    class="action delete"
-
-                                    href="manager.php?delete=<?php
-                                    echo intval(
-                                        $book['id']
-                                    );
-                                    ?>"
-
-                                    onclick="return confirmDelete();"
-                                >
-                                    Delete
-                                </a>
-
-
-
-                                <?php
-                                if (
-                                    $book['status']
-                                    == 'Borrowed'
-                                ):
-                                ?>
-
-
-                                    <a
-                                        class="action return"
-
-                                        href="manager.php?return=<?php
-                                        echo intval(
-                                            $book['id']
-                                        );
-                                        ?>"
-
-                                        onclick="return confirmReturn();"
-                                    >
-                                        Accept Return
-                                    </a>
-
-
-                                <?php endif; ?>
-
-
-                            </td>
-
-
-                        </tr>
-
-
-                    <?php endforeach; ?>
-
-
-                <?php else: ?>
-
-
-                    <tr>
-
-                        <td
-                            colspan="7"
-                            class="empty"
-                        >
-
-                            No books found.
-
-                        </td>
-
-                    </tr>
-
-
-                <?php endif; ?>
-
-
-                </tbody>
-
-
-            </table>
-
-
+            <?php if ($customerSuccessMessage !== ''): ?>
+                <div class="success-box"><?php echo e($customerSuccessMessage); ?></div>
+            <?php endif; ?>
+
+            <?php if ($customerError !== ''): ?>
+                <div class="error-box"><?php echo e($customerError); ?></div>
+            <?php endif; ?>
+
+            <?php if ($dbError !== ''): ?>
+                <div class="error-box"><?php echo e($dbError); ?></div>
+            <?php elseif (count($users) === 0): ?>
+                <div class="empty">No registered customers found.</div>
+            <?php else: ?>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Full Name</th>
+                                <th>Email</th>
+                                <th>Registered At</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($users as $user): ?>
+                                <tr>
+                                    <td><span class="id-pill"><?php echo e($user['id']); ?></span></td>
+                                    <td><?php echo e($user['full_name']); ?></td>
+                                    <td><?php echo e($user['email']); ?></td>
+                                    <td><?php echo e($user['created_at']); ?></td>
+                                    <td>
+                                        <form
+                                            class="delete-form"
+                                            method="post"
+                                            action="manager.php"
+                                            onsubmit="return confirm('Are you sure you want to remove this customer?');"
+                                        >
+                                            <input type="hidden" name="action" value="delete_customer">
+                                            <input type="hidden" name="csrf_token" value="<?php echo e($_SESSION['customer_csrf_token']); ?>">
+                                            <input type="hidden" name="customer_id" value="<?php echo e($user['id']); ?>">
+                                            <button type="submit" class="delete-btn">Remove</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </section>
+
+        <section class="panel">
+            <div class="panel-header">
+                <h2>Book List</h2>
+                <span class="badge"><?php echo count($books); ?> books</span>
+            </div>
+
+            <?php if ($bookError !== '' && count($books) === 0): ?>
+                <div class="error-box"><?php echo e($bookError); ?></div>
+            <?php elseif (count($books) === 0): ?>
+                <div class="empty">No books have been added yet.</div>
+            <?php else: ?>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Book Name</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($books as $book): ?>
+                                <tr>
+                                    <td><span class="id-pill"><?php echo e($book['id']); ?></span></td>
+                                    <td><?php echo e($book['name']); ?></td>
+                                    <td>
+                                        <form
+                                            class="delete-form"
+                                            method="post"
+                                            action="manager.php"
+                                            onsubmit="return confirm('Are you sure you want to delete this book?');"
+                                        >
+                                            <input type="hidden" name="action" value="delete_book">
+                                            <input type="hidden" name="csrf_token" value="<?php echo e($_SESSION['book_csrf_token']); ?>">
+                                            <input type="hidden" name="book_id" value="<?php echo e($book['id']); ?>">
+                                            <button type="submit" class="delete-btn">Delete</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            <?php endif; ?>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-top">
+            <div class="footer-brand">
+                <div class="logo">
+                    <span class="logo-icon">◆</span>
+                    Bookhaven
+                </div>
+                <p>Discover new worlds, one page at a time.</p>
+            </div>
+
+            <div class="footer-links">
+                <h4>Browse</h4>
+                <a href="index.php">Home</a>
+                <a href="#">Fiction</a>
+                <a href="#">Non-Fiction</a>
+                <a href="#">Children's</a>
+            </div>
+
+            <div class="footer-links">
+                <h4>Help</h4>
+                <a href="contact.php">Contact Us</a>
+                <a href="#">Membership</a>
+                <a href="#">Renewals</a>
+                <a href="#">FAQ</a>
+            </div>
+
+            <div class="footer-social">
+                <h4>Follow Us</h4>
+                <div class="social-icons">
+                    <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+                    <a href="#" aria-label="Instagram"><i class="fa-brands fa-instagram"></i></a>
+                </div>
+            </div>
         </div>
 
-
-    </div>
-
-
-
-    <!-- =================================
-         BORROW REQUESTS
-    ================================== -->
-
-    <div class="section">
-
-
-        <h2>
-            📋 Borrowing Requests
-        </h2>
-
-
-        <div class="table-wrapper">
-
-
-            <table>
-
-
-                <thead>
-
-
-                    <tr>
-
-                        <th>
-                            Request ID
-                        </th>
-
-                        <th>
-                            Student
-                        </th>
-
-                        <th>
-                            Book
-                        </th>
-
-                        <th>
-                            Book Price
-                        </th>
-
-                        <th>
-                            Request Status
-                        </th>
-
-                        <th>
-                            Manager Action
-                        </th>
-
-                    </tr>
-
-
-                </thead>
-
-
-
-                <tbody>
-
-
-                <?php if (count($requests) > 0): ?>
-
-
-                    <?php foreach ($requests as $request): ?>
-
-
-                        <tr>
-
-
-                            <td>
-
-                                <?php
-                                echo intval(
-                                    $request['id']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $request['student']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                <?php
-                                echo htmlspecialchars(
-                                    $request['book_title']
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-                                ৳<?php
-                                echo number_format(
-                                    $request['book_price'],
-                                    2
-                                );
-                                ?>
-
-                            </td>
-
-
-                            <td>
-
-
-                                <span
-                                    class="
-                                        status
-                                        <?php
-                                        echo strtolower(
-                                            $request['status']
-                                        );
-                                        ?>
-                                    "
-                                >
-
-                                    <?php
-                                    echo htmlspecialchars(
-                                        $request['status']
-                                    );
-                                    ?>
-
-                                </span>
-
-
-                            </td>
-
-
-
-                            <td>
-
-
-                            <?php
-                            if (
-                                $request['status']
-                                == 'Pending'
-                            ):
-                            ?>
-
-
-                                <a
-                                    class="action approve"
-
-                                    href="manager.php?approve=<?php
-                                    echo intval(
-                                        $request['id']
-                                    );
-                                    ?>"
-                                >
-                                    Approve
-                                </a>
-
-
-
-                            <?php
-                            elseif (
-                                $request['status']
-                                == 'Approved'
-                            ):
-                            ?>
-
-
-                                <?php
-                                if (
-                                    $request['book_status']
-                                    == 'Available'
-                                ):
-                                ?>
-
-
-                                    <a
-                                        class="action issue"
-
-                                        href="manager.php?issue=<?php
-                                        echo intval(
-                                            $request['id']
-                                        );
-                                        ?>"
-
-                                        onclick="return confirmIssue();"
-                                    >
-
-                                        Issue Book
-
-                                    </a>
-
-
-                                <?php else: ?>
-
-
-                                    <span
-                                        style="
-                                            color:#a33a3a;
-                                            font-weight:bold;
-                                        "
-                                    >
-                                        Book unavailable
-                                    </span>
-
-
-                                <?php endif; ?>
-
-
-
-                            <?php
-                            elseif (
-                                $request['status']
-                                == 'Issued'
-                            ):
-                            ?>
-
-
-                                <span>
-
-                                    Waiting for return
-
-                                </span>
-
-
-
-                            <?php
-                            elseif (
-                                $request['status']
-                                == 'Returned'
-                            ):
-                            ?>
-
-
-                                <span
-                                    style="
-                                        color:#357447;
-                                        font-weight:bold;
-                                    "
-                                >
-
-                                    Completed
-
-                                </span>
-
-
-                            <?php endif; ?>
-
-
-                            </td>
-
-
-                        </tr>
-
-
-                    <?php endforeach; ?>
-
-
-                <?php else: ?>
-
-
-                    <tr>
-
-                        <td
-                            colspan="6"
-                            class="empty"
-                        >
-
-                            No borrowing requests found.
-
-                        </td>
-
-                    </tr>
-
-
-                <?php endif; ?>
-
-
-                </tbody>
-
-
-            </table>
-
-
+        <div class="footer-bottom">
+            <p>&copy; 2026 Bookhaven. All rights reserved.</p>
         </div>
-
-
-    </div>
-
-
-</div>
-
-
-
-<script>
-
-
-/* =========================================
-   BOOK FORM VALIDATION
-========================================= */
-
-function validateBookForm() {
-
-    const title =
-        document
-        .getElementById("title")
-        .value
-        .trim();
-
-
-    const author =
-        document
-        .getElementById("author")
-        .value
-        .trim();
-
-
-    const category =
-        document
-        .getElementById("category")
-        .value
-        .trim();
-
-
-    const price =
-        document
-        .getElementById("price")
-        .value
-        .trim();
-
-
-
-    if (title === "") {
-
-        alert(
-            "Please enter the book title."
-        );
-
-        document
-        .getElementById("title")
-        .focus();
-
-        return false;
-    }
-
-
-    if (title.length < 2) {
-
-        alert(
-            "Book title must contain at least 2 characters."
-        );
-
-        document
-        .getElementById("title")
-        .focus();
-
-        return false;
-    }
-
-
-    if (author === "") {
-
-        alert(
-            "Please enter the author's name."
-        );
-
-        document
-        .getElementById("author")
-        .focus();
-
-        return false;
-    }
-
-
-    if (category === "") {
-
-        alert(
-            "Please enter the book category."
-        );
-
-        document
-        .getElementById("category")
-        .focus();
-
-        return false;
-    }
-
-
-    if (price === "") {
-
-        alert(
-            "Please enter the book price."
-        );
-
-        document
-        .getElementById("price")
-        .focus();
-
-        return false;
-    }
-
-
-    if (
-        isNaN(price) ||
-        Number(price) <= 0
-    ) {
-
-        alert(
-            "Book price must be greater than zero."
-        );
-
-        document
-        .getElementById("price")
-        .focus();
-
-        return false;
-    }
-
-
-    return true;
-}
-
-
-
-/* =========================================
-   DELETE CONFIRMATION
-========================================= */
-
-function confirmDelete() {
-
-    return confirm(
-        "Are you sure you want to delete this book?"
-    );
-}
-
-
-
-/* =========================================
-   ISSUE CONFIRMATION
-========================================= */
-
-function confirmIssue() {
-
-    return confirm(
-        "Are you sure you want to issue this book?"
-    );
-}
-
-
-
-/* =========================================
-   RETURN CONFIRMATION
-========================================= */
-
-function confirmReturn() {
-
-    return confirm(
-        "Confirm that the student has returned this book?"
-    );
-}
-
-
-</script>
-
+    </footer>
 
 </body>
-
 </html>

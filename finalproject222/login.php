@@ -20,7 +20,7 @@ $signupName = '';
 $signupEmail = '';
 $loginRole = 'customer';
 $signupRole = 'customer';
-$allowedRoles = ['customer', 'admin', 'manager'];
+$allowedRoles = ['customer', 'manager'];
 $databaseError = '';
 
 $successMessage = isset($_SESSION['auth_success'])
@@ -69,25 +69,34 @@ try {
 }
 
 /*
- * Keep everything in one users table. If this project already has the users
- * table from the earlier version, add the role column automatically once.
+ * Make sure the separate manager table exists. This is useful when the
+ * Bookhaven database was imported before the manager table was added.
  */
 if ($pdo instanceof PDO) {
     try {
-        $roleColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'role'");
-
-        if (!$roleColumn->fetch()) {
-            $pdo->exec(
-                "ALTER TABLE users
-                 ADD COLUMN role ENUM('customer','admin','manager')
-                 NOT NULL DEFAULT 'customer'"
-            );
-        }
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `manager` (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                full_name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_manager_email (email)
+            ) ENGINE=InnoDB
+              DEFAULT CHARACTER SET utf8mb4
+              COLLATE utf8mb4_unicode_ci"
+        );
     } catch (PDOException $exception) {
-        error_log('Bookhaven role setup error: ' . $exception->getMessage());
-        $databaseError = 'The users table is missing or the role column could not be prepared.';
+        error_log('Bookhaven manager table setup error: ' . $exception->getMessage());
+        $databaseError = 'The manager table could not be prepared. Import the latest database.sql in phpMyAdmin.';
     }
 }
+
+/*
+ * Customer accounts are stored in users.
+ * Manager accounts are stored in manager.
+ */
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = isset($_POST['action']) ? (string) $_POST['action'] : '';
@@ -143,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!in_array($signupRole, $allowedRoles, true)) {
-            $signupErrors['role'] = 'Please select Customer, Admin, or Manager.';
+            $signupErrors['role'] = 'Please select Customer or Manager.';
         }
 
         if (!$acceptedTerms) {
@@ -156,21 +165,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($signupErrors) && $pdo instanceof PDO) {
             try {
-                $checkUser = $pdo->prepare('SELECT id FROM users WHERE email = :email LIMIT 1');
-                $checkUser->execute(['email' => $signupEmail]);
+                // Customer -> users table, Manager -> manager table.
+                $accountTable = $signupRole === 'manager' ? 'manager' : 'users';
 
-                if ($checkUser->fetch()) {
+                $checkAccount = $pdo->prepare(
+                    "SELECT id FROM `{$accountTable}` WHERE email = :email LIMIT 1"
+                );
+                $checkAccount->execute(['email' => $signupEmail]);
+
+                if ($checkAccount->fetch()) {
                     $signupErrors['email'] = 'An account with this email already exists.';
                 } else {
-                    $createUser = $pdo->prepare(
-                        'INSERT INTO users (full_name, email, password_hash, role)
-                         VALUES (:full_name, :email, :password_hash, :role)'
+                    $createAccount = $pdo->prepare(
+                        "INSERT INTO `{$accountTable}` (full_name, email, password_hash)
+                         VALUES (:full_name, :email, :password_hash)"
                     );
-                    $createUser->execute([
+                    $createAccount->execute([
                         'full_name' => $signupName,
                         'email' => $signupEmail,
                         'password_hash' => password_hash($password, PASSWORD_DEFAULT),
-                        'role' => $signupRole,
                     ]);
 
                     $_SESSION['auth_success'] = 'Account created successfully. You can log in now.';
@@ -207,7 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if (!in_array($loginRole, $allowedRoles, true)) {
-            $loginErrors['role'] = 'Please select Customer, Admin, or Manager.';
+            $loginErrors['role'] = 'Please select Customer or Manager.';
         }
 
         if ($databaseError !== '') {
@@ -216,38 +229,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (empty($loginErrors) && $pdo instanceof PDO) {
             try {
-                $findUser = $pdo->prepare(
-                    'SELECT id, full_name, email, password_hash, role
-                     FROM users
+                // Read from the table that belongs to the selected account type.
+                $accountTable = $loginRole === 'manager' ? 'manager' : 'users';
+
+                $findAccount = $pdo->prepare(
+                    "SELECT id, full_name, email, password_hash
+                     FROM `{$accountTable}`
                      WHERE email = :email
-                     LIMIT 1'
+                     LIMIT 1"
                 );
-                $findUser->execute(['email' => $loginEmail]);
-                $user = $findUser->fetch();
+                $findAccount->execute(['email' => $loginEmail]);
+                $account = $findAccount->fetch();
 
-                $passwordIsCorrect = $user
-                    && password_verify($password, (string) $user['password_hash']);
+                $passwordIsCorrect = $account
+                    && password_verify($password, (string) $account['password_hash']);
 
-                $roleIsCorrect = $user
-                    && isset($user['role'])
-                    && (string) $user['role'] === $loginRole;
-
-                if (!$passwordIsCorrect || !$roleIsCorrect) {
+                if (!$passwordIsCorrect) {
                     $loginErrors['general'] = 'Incorrect email, password, or account type.';
                 } else {
                     session_regenerate_id(true);
-                    $_SESSION['user_id'] = (int) $user['id'];
-                    $_SESSION['user_name'] = (string) $user['full_name'];
-                    $_SESSION['user_email'] = (string) $user['email'];
-                    $_SESSION['role'] = (string) $user['role'];
+                    $_SESSION['user_id'] = (int) $account['id'];
+                    $_SESSION['user_name'] = (string) $account['full_name'];
+                    $_SESSION['user_email'] = (string) $account['email'];
+                    $_SESSION['role'] = $loginRole;
                     $_SESSION['logged_in'] = true;
                     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 
-                    if ($_SESSION['role'] === 'customer') {
-                        header('Location: index.php');
+                    if ($loginRole === 'manager') {
+                        header('Location: manager.php');
                     } else {
-                        // Admin and Manager both use the manager page for now.
-                        header('Location: mindex.php');
+                        header('Location: index.php');
                     }
                     exit;
                 }
@@ -356,7 +367,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     required
                                 >
                                     <option value="customer" <?php echo $loginRole === 'customer' ? 'selected' : ''; ?>>Customer</option>
-                                    <option value="admin" <?php echo $loginRole === 'admin' ? 'selected' : ''; ?>>Admin</option>
                                     <option value="manager" <?php echo $loginRole === 'manager' ? 'selected' : ''; ?>>Manager</option>
                                 </select>
                             </div>
@@ -479,7 +489,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     required
                                 >
                                     <option value="customer" <?php echo $signupRole === 'customer' ? 'selected' : ''; ?>>Customer</option>
-                                    <option value="admin" <?php echo $signupRole === 'admin' ? 'selected' : ''; ?>>Admin</option>
                                     <option value="manager" <?php echo $signupRole === 'manager' ? 'selected' : ''; ?>>Manager</option>
                                 </select>
                             </div>
